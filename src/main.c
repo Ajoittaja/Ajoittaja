@@ -1,81 +1,54 @@
 /**
- * Ajoittaja main loop
- *
- * Author: Kasperi Kiviluoma
- * License: MIT
+ * @file main.c
+ * @brief Ajoittaja main
+ * @author Kasperi Kiviluoma
+ * @license MIT
  */
 
-#include <nrfx_rtc.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-// Log
-LOG_MODULE_REGISTER(nRF52DK, LOG_LEVEL_DBG);   // TODO: Change name
+#include "timer.h"
 
-// RTC
-const nrfx_rtc_t rtc0 = NRFX_RTC_INSTANCE(0);
-uint32_t hours = 21;
-uint32_t minutes = 07;
-uint32_t seconds = 0;
+LOG_MODULE_REGISTER(Ajoittaja, LOG_LEVEL_DBG);
 
-// TODO: Why static?
-// TODO: Improve
-static void rtc0_handler(nrfx_rtc_int_type_t int_type) {
-    if (nrfx_rtc_counter_get(&rtc0) >= 8) {
-        seconds++;
-        if (seconds >= 60) {
-            seconds = 0;
-            minutes++;
-            if (minutes >= 60) {
-                minutes = 0;
-                hours++;
-                if (hours >= 24) {
-                    hours = 0;
-                }
-            }
-        }
-        nrfx_rtc_counter_clear(&rtc0);
-        LOG_INF("Time: %02d:%02d:%02d", hours, minutes, seconds);
-    }
-}
+Time now = {thursday, 21, 59, 50};
 
-// Initialize RTC0
-// TODO: Move to separate file
-nrfx_err_t rtc0_init(void) {
-    nrfx_err_t status;
-
-    // Conf
-    nrfx_rtc_config_t conf = NRFX_RTC_DEFAULT_CONFIG;
-    // TODO: Improve?
-    conf.prescaler = 4095;   // 32768 / 4096 = 8 Hz
-
-    // Init
-    status = nrfx_rtc_init(&rtc0, &conf, rtc0_handler);
-    if (status == NRFX_SUCCESS) {
-        nrfx_rtc_tick_enable(&rtc0, true);
-        nrfx_rtc_enable(&rtc0);
-        LOG_INF("rtc0_init success");
-    }
-
-    return status;
-}
-
-// TODO: Why?
-// TODO: Move
-static void manual_isr_setup() {
-    IRQ_DIRECT_CONNECT(RTC0_IRQn, 0, nrfx_rtc_0_irq_handler, 0);
-    irq_enable(RTC0_IRQn);
-}
+Schedule mon[] = {{7, 0, 0, 3600}, {20, 0, 0, 7200}};
+Schedule tue[] = {{7, 0, 0, 3600}, {20, 0, 0, 7200}};
+Schedule wed[] = {{7, 0, 0, 3600}, {20, 0, 0, 7200}};
+Schedule thu[] = {{7, 0, 0, 3600}, {20, 0, 0, 7200}};
+Schedule fri[] = {{7, 0, 0, 3600}, {20, 0, 0, 7200}};
+Schedule sat[] = {{20, 0, 0, 7200}};
+Schedule sun[] = {{20, 0, 0, 7200}};
+Schedule *schedules[] = {mon, tue, wed, thu, fri, sat, sun};
 
 int main(void) {
-    // Init RTC0
-    if (rtc0_init() != NRFX_SUCCESS) {
+    // Init GPIO
+    if (gpio_init() != 0) {
+        LOG_ERR("GPIO init failed");
+        return -1;
+    }
+
+    // Init RTC0, 125ms counter period
+    if (rtc_init(4095, time_rtc, time_handler, true) != NRFX_SUCCESS) {
         LOG_ERR("RTC0 init failed");
         return -1;
     }
 
-    // Init IRQ
+    // Init RTC2
+    if (rtc_init(4095, schedule_rtc, schedule_handler, false) != NRFX_SUCCESS) {
+        LOG_ERR("RTC2 init failed");
+        return -1;
+    }
+
+    // Init IRQs
     manual_isr_setup();
 
-    return 0;
+    // TODO: Low power sleep
+    while (true) {
+        k_sleep(K_MSEC(10));
+    }
+
+    return 0;   // Should never reach this
 }
