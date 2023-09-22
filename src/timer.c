@@ -17,14 +17,15 @@
 
 LOG_MODULE_DECLARE(Ajoittaja, LOG_LEVEL_DBG);
 
-// Connect LED driver to this pin
-struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_NODELABEL(led0), gpios);
+// Connect GPIO driver to this pin
+struct gpio_dt_spec gpio_pin = GPIO_DT_SPEC_GET(DT_NODELABEL(led0), gpios);
 
-// Turn LED on for the duration of the schedule
-void led_on(uint32_t duration);
+// Turn GPIO state HIGH for the duration of the schedule
+void gpio_high(uint32_t duration);
 
-// 0 = off, 1 = on
-bool led_state = 0;
+#define GPIO_LOW  1
+#define GPIO_HIGH 0
+bool gpio_state = GPIO_LOW;
 
 const nrfx_rtc_t time_rtc = NRFX_RTC_INSTANCE(TIME_RTC_INSTANCE);
 const nrfx_rtc_t schedule_rtc = NRFX_RTC_INSTANCE(SCHEDULE_RTC_INSTANCE);
@@ -35,12 +36,12 @@ const nrfx_rtc_t schedule_rtc = NRFX_RTC_INSTANCE(SCHEDULE_RTC_INSTANCE);
 
 int gpio_init(void) {
     // Check if the device is ready
-    if (!device_is_ready(led.port)) {
+    if (!device_is_ready(gpio_pin.port)) {
         return -1;
     }
 
-    gpio_pin_configure_dt(&led, GPIO_OUTPUT | GPIO_ACTIVE_HIGH);
-    gpio_pin_set_dt(&led, 1);   // Set to low
+    // BUG: GPIO is HIGH if pin is set to logical 0
+    gpio_pin_configure_dt(&gpio_pin, GPIO_OUTPUT_ACTIVE);
 
     return 0;
 }
@@ -103,12 +104,12 @@ void time_handler(nrfx_rtc_int_type_t int_type) {
 
             // Check if any of the schedules should be triggered
             // schedules is organized so that schedules[0] is monday, etc..
-            if (led_state == 0) {
+            if (gpio_state == GPIO_LOW) {
                 int i = now.day;
                 for (int j = 0; j < SCHEDULE_SIZE; j++) {
                     // Calculate the total seconds for the start and current
-                    // time Without this led is not turned on if Ajoittaja was
-                    // turned on after the start time
+                    // time Without this the GPIO driver is not turned HIGH if
+                    // Ajoittaja was turned HIGH after the start time
                     int start_seconds = schedules[i][j].start_hour * 3600 +
                                         schedules[i][j].start_minute * 60 +
                                         schedules[i][j].start_second;
@@ -121,12 +122,13 @@ void time_handler(nrfx_rtc_int_type_t int_type) {
                         now_seconds <
                             start_seconds + schedules[i][j].duration) {
 
-                        // Calculate the remaining duration the LED should be on
+                        // Calculate the remaining duration the GPIO driver
+                        // should be in HIGH state
                         int remaining_duration = start_seconds +
                                                  schedules[i][j].duration -
                                                  now_seconds;
 
-                        led_on(remaining_duration);
+                        gpio_high(remaining_duration);
                         break;
                     }
                 }
@@ -138,23 +140,23 @@ void time_handler(nrfx_rtc_int_type_t int_type) {
 void schedule_handler(nrfx_rtc_int_type_t int_type) {
     LOG_INF("Schedule handler");
     if (int_type == NRFX_RTC_INT_COMPARE0) {
-        LOG_INF("Turn led off");
-        led_state = 0;
-        gpio_pin_set_dt(&led, 1);
+        LOG_INF("Turn GPIO to LOW state");
+        gpio_state = GPIO_LOW;
+        gpio_pin_set_dt(&gpio_pin, GPIO_LOW);
     }
 }
 
-void led_on(uint32_t duration) {
+void gpio_high(uint32_t duration) {
     // Clear counter to start counting from 0
     nrfx_rtc_counter_clear(&schedule_rtc);
 
-    // Set compare value to trigger interrupt when it is time to turn off
-    // Convert from seconds to ticks
+    // Set compare value to trigger interrupt when it is time to turn GPIO state
+    // LOW Convert from seconds to ticks
     if (nrfx_rtc_cc_set(&schedule_rtc, 0, duration * 8, true) != NRFX_SUCCESS) {
         LOG_ERR("Failed to set compare value for the schedule RTC");
     } else {
-        LOG_INF("Turn on");
-        led_state = 1;
-        gpio_pin_set_dt(&led, 0);
+        LOG_INF("Turn GPIO to HIGH state");
+        gpio_state = GPIO_HIGH;
+        gpio_pin_set_dt(&gpio_pin, GPIO_HIGH);
     }
 }

@@ -67,7 +67,7 @@ extern Time now;
 /**
  * @brief Contains the start time and duration.
  *
- * One schedule contains all the start times for the day.
+ * One schedule array contains all the start times for the day.
  */
 typedef struct {
     uint8_t start_hour;
@@ -126,15 +126,15 @@ void manual_isr_setup();
  * @brief Handler for the time RTC interrupts.
  *
  * Keeps track of the current time. If the current time matches to the start
- * time of a schedule turn the GPIO on and set the compare value to trigger an
- * interrupt when it is time to turn off.
+ * time of a schedule turn the GPIO state HIGH and set the compare value to
+ * trigger an interrupt when it is time to turn LOW.
  *
  * @param irq_type Type of the interrupt.
  */
 void time_handler(nrfx_rtc_int_type_t irq_type);
 
 /**
- * If triggered by a compare event, turns the GPIO off.
+ * If triggered by a compare event, turns the GPIO state LOW.
  *
  * @param irq_type Type of the interrupt.
  */
