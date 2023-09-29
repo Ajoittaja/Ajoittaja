@@ -5,15 +5,15 @@
  * @license MIT
  */
 
+#include "bluetooth.h"
 #include "schedules.h"
 #include "time-now.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-// Size of stack area used by each thread
-#define STACKSIZE 1024
-// Scheduling priority used by each thread
-#define PRIORITY 7
+#define STACKSIZE       1024
+#define LOWEST_PRIORITY 7
+#define BLE_PRIORITY    6
 
 LOG_MODULE_REGISTER(Ajoittaja, LOG_LEVEL_DBG);
 
@@ -30,4 +30,8 @@ Schedule *schedules[] = {mon, tue, wed, thu, fri, sat, sun};
 
 // Schedules and current time handling
 K_THREAD_DEFINE(schedule_handler_id, STACKSIZE, schedule_handler, NULL, NULL,
-                NULL, PRIORITY, 0, 0);
+                NULL, LOWEST_PRIORITY, 0, 0);
+
+// Bluetooth handling
+K_THREAD_DEFINE(ble_handler_id, STACKSIZE, ble_handler, NULL, NULL, NULL,
+                BLE_PRIORITY, 0, 0);
