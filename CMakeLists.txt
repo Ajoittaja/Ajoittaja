@@ -8,4 +8,5 @@ project(Ajoittaja)
 target_sources(app PRIVATE
     src/main.c
     src/timer.c
+    src/bluetooth.c
 )
