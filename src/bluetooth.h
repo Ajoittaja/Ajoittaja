@@ -30,3 +30,5 @@ void ble_handler();
  * @return Zero on success or (negative) error code otherwise
  */
 int bluetooth_init(void);
+
+static void batt_notify(void);

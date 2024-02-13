@@ -12,8 +12,8 @@
 #include <zephyr/logging/log.h>
 
 #define STACKSIZE       1024
-#define LOWEST_PRIORITY 7
 #define BLE_PRIORITY    6
+#define LOWEST_PRIORITY 7
 
 LOG_MODULE_REGISTER(Ajoittaja, LOG_LEVEL_DBG);
 
