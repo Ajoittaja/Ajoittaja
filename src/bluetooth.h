@@ -49,12 +49,3 @@ static struct bt_le_adv_param *adv_param =
 
 /// BLE thread handler
 void ble_handler();
-
-/**
- * @brief Start BLE advertising
- *
- * Initialize bluetooth and start advertising.
- *
- * @return Zero on success or (negative) error code otherwise
- */
-int bluetooth_init(void);
