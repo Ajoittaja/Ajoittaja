@@ -180,6 +180,7 @@ void on_le_param_updated(struct bt_conn *conn, uint16_t interval,
     LOG_INF("Connection parameters updated: interval %.2f ms, latency %d "
             "intervals, timeout %d ms",
             connection_interval, latency, supervision_timeout);
+    update_phy(bt_handle);   // Force 2M PHY
 }
 
 // TODO: OK
