@@ -1,6 +1,5 @@
-# editors
-*.swp
-*~
+# IDE
+.vscode/
 
-# build
+# Build
 /build*/

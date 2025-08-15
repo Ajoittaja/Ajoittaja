@@ -16,6 +16,11 @@
 // FIXME: Change to actual company code, needs to be registered
 #define COMPANY_ID_CODE 0x0059
 
+#define RUN_STATUS_LED DK_LED1
+#define CON_STATUS_LED DK_LED2
+#define USER_LED       DK_LED3
+#define USER_BUTTON    DK_BTN1_MSK
+
 /// Manufacturer data structure
 typedef struct adv_mfg_data {
     uint16_t company_code;   // Company Identifier Code
@@ -28,6 +33,7 @@ static adv_mfg_data_type adv_mfg_data = {COMPANY_ID_CODE};
 // TODO: Consider BT_LE_AD_LIMITED
 static const struct bt_data ad[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+    BT_DATA_BYTES(BT_DATA_SOLICIT16, BT_UUID_16_ENCODE(BT_UUID_CTS_VAL)),
     BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
     BT_DATA(BT_DATA_MANUFACTURER_DATA, (unsigned char *) &adv_mfg_data,
             sizeof(adv_mfg_data))};

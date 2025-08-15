@@ -9,20 +9,22 @@
  */
 
 #include "bluetooth.h"
+#include "cts_service.h"
 #include "dk_buttons_and_leds.h"
+#include "my_lbs.h"
 #include "time-now.h"
+#include <bluetooth/gatt_dm.h>
 #include <bluetooth/services/lbs.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/kernel.h>
+
 #include <zephyr/logging/log.h>
 
 #include <dk_buttons_and_leds.h>
 
 LOG_MODULE_DECLARE(Ajoittaja, LOG_LEVEL_DBG);
-#define CONNECTION_STATUS_LED DK_LED2
-#define USER_BUTTON           DK_BTN1_MSK
 
 /**
  * @brief Callback for connection
@@ -76,6 +78,39 @@ void on_le_data_len_updated(struct bt_conn *conn,
 // TODO: OK
 struct bt_conn *bt_handle;
 
+static void notify_current_time_cb(struct bt_cts_client *cts_c,
+                                   struct bt_cts_current_time *current_time) {
+    current_time_print(current_time);
+}
+
+static void enable_notifications(void) {
+    int err;
+
+    if (has_cts && (bt_conn_get_security(cts_c.conn) >= BT_SECURITY_L2)) {
+        err = bt_cts_subscribe_current_time(&cts_c, notify_current_time_cb);
+        if (err) {
+            printk("Cannot subscribe to current time value notification (err "
+                   "%d)\n",
+                   err);
+        }
+    }
+}
+
+static void security_changed(struct bt_conn *conn, bt_security_t level,
+                             enum bt_security_err err) {
+    char addr[BT_ADDR_LE_STR_LEN];
+
+    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+    if (!err) {
+        printk("Security changed: %s level %u\n", addr, level);
+
+        enable_notifications();
+    } else {
+        printk("Security failed: %s level %u err %d\n", addr, level, err);
+    }
+}
+
 /// Connection callbacks
 // TODO: OK
 struct bt_conn_cb connection_callbacks = {
@@ -83,58 +118,13 @@ struct bt_conn_cb connection_callbacks = {
     .disconnected = on_disconnected,
     .le_param_updated = on_le_param_updated,
     .le_phy_updated = on_le_phy_updated,
-    .le_data_len_updated = on_le_data_len_updated};
+    .le_data_len_updated = on_le_data_len_updated,
+    .security_changed = security_changed,
+};
 
 /// MTU exchange parameters
 // TODO: OK
 struct bt_gatt_exchange_params exchange_params;
-
-static uint8_t battery_level[4] = {
-    0};   // Assuming 'battery_level' is a byte array with 4 values
-
-static ssize_t read_blvl(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-                         void *buf, uint16_t len, uint16_t offset) {
-    Time nnow = now;
-    const uint8_t *value = (const uint8_t *) &nnow + offset;
-
-    return bt_gatt_attr_read(conn, attr, buf, len, offset, &now,
-                             sizeof(now) - offset);
-}
-
-static ssize_t write_test(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-                          void *buf, uint16_t len, uint16_t offset) {
-    LOG_INF("test");
-    memcpy(&battery_level + offset, buf, len);
-    LOG_INF("test%d %d %d {}", battery_level[0], battery_level[1],
-            battery_level[2]);
-    Time t = {battery_level[0], battery_level[1], battery_level[2],
-              battery_level[3]};
-    now = t;   // FIXME: Potentially dangerous
-}
-
-static void blvl_ccc_cfg_changed(const struct bt_gatt_attr *attr,
-                                 uint16_t value) {
-    ARG_UNUSED(attr);
-
-    bool notif_enabled = (value == BT_GATT_CCC_NOTIFY);
-
-    LOG_INF("BAS Notifications %s", notif_enabled ? "enabled" : "disabled");
-}
-BT_GATT_SERVICE_DEFINE(basa, BT_GATT_PRIMARY_SERVICE(BT_UUID_GATT),
-                       BT_GATT_CHARACTERISTIC(BT_UUID_GATT_VAL,
-                                              BT_GATT_CHRC_READ |
-                                                  BT_GATT_CHRC_NOTIFY |
-                                                  BT_GATT_CHRC_WRITE,
-                                              BT_GATT_PERM_READ |
-                                                  BT_GATT_PERM_WRITE,
-                                              read_blvl, write_test, &now),
-                       BT_GATT_CCC(blvl_ccc_cfg_changed,
-                                   BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), );
-
-static void batt_notify(void) {
-    uint8_t level = 100U;
-    bt_gatt_notify(NULL, &basa.attrs[1], &level, sizeof(level));
-}
 
 // TODO: OK
 void on_connected(struct bt_conn *conn, uint8_t err) {
@@ -163,6 +153,12 @@ void on_connected(struct bt_conn *conn, uint8_t err) {
     update_phy(bt_handle);
     update_data_length(bt_handle);
     update_mtu(bt_handle);
+
+    has_cts = false;
+    err = bt_gatt_dm_start(conn, BT_UUID_CTS, &discover_cb, NULL);
+    if (err) {
+        printk("Failed to start discovery (err %d)\n", err);
+    }
 }
 
 // TODO: OK
@@ -290,9 +286,78 @@ void ble_handler() {
 
     while (!stop) {
         // TODO: Change to a more power efficient way to sleep
-        k_sleep(K_SECONDS(1));
+        int err;
+        err = bt_cts_read_current_time(&cts_c, read_current_time_cb);
+        if (err) {
+            LOG_WRN("Failed reading current time (err: %d)\n", err);
+        }
+        k_sleep(K_SECONDS(2));
     }
 }
+
+static void app_led_cb(bool led_state) { dk_set_led(USER_LED, led_state); }
+static bool app_button_state;
+static bool app_button_cb(void) { return app_button_state; }
+static struct my_lbs_cb app_callbacks = {
+    .led_cb = app_led_cb,
+    .button_cb = app_button_cb,
+};
+
+static void button_changed(uint32_t button_state, uint32_t has_changed) {
+    if (has_changed & USER_BUTTON) {
+        uint32_t user_button_state = button_state & USER_BUTTON;
+        /* STEP 6 - Send indication on a button press */
+        my_lbs_send_button_state_indicate(user_button_state);
+        app_button_state = user_button_state ? true : false;
+        my_lbs_send_button_state_indicate(user_button_state);
+    }
+}
+
+static int init_button(void) {
+    int err;
+
+    err = dk_buttons_init(button_changed);
+    if (err) {
+        printk("Cannot init buttons (err: %d)\n", err);
+    }
+
+    return err;
+}
+
+static void auth_cancel(struct bt_conn *conn) {
+    char addr[BT_ADDR_LE_STR_LEN];
+
+    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+    printk("Pairing cancelled: %s\n", addr);
+
+    bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+}
+
+static struct bt_conn_auth_cb conn_auth_callbacks = {
+    .cancel = auth_cancel,
+};
+
+static void pairing_complete(struct bt_conn *conn, bool bonded) {
+    char addr[BT_ADDR_LE_STR_LEN];
+
+    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+    printk("Pairing completed: %s, bonded: %d\n", addr, bonded);
+}
+
+static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason) {
+    char addr[BT_ADDR_LE_STR_LEN];
+
+    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+    printk("Pairing failed conn: %s, reason %d\n", addr, reason);
+
+    bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+}
+
+static struct bt_conn_auth_info_cb conn_auth_info_callbacks = {
+    .pairing_complete = pairing_complete, .pairing_failed = pairing_failed};
 
 /**
  * @brief Start BLE advertising
@@ -308,6 +373,25 @@ int bluetooth_init() {
     // Connection callbacks
     bt_conn_cb_register(&connection_callbacks);
 
+    // Authorization callbacks
+    err = bt_conn_auth_cb_register(&conn_auth_callbacks);
+    if (err) {
+        printk("Failed to register authorization callbacks\n");
+        return 0;
+    }
+    err = bt_conn_auth_info_cb_register(&conn_auth_info_callbacks);
+    if (err) {
+        printk("Failed to register authorization info callbacks\n");
+        return 0;
+    }
+
+    // Current Time Service client
+    err = bt_cts_client_init(&cts_c);
+    if (err) {
+        LOG_ERR("CTS client init failed (err %d)\n", err);
+        return 0;
+    }
+
     // Enable
     err = bt_enable(NULL);
     if (err) {
@@ -315,6 +399,14 @@ int bluetooth_init() {
         return -1;
     }
     LOG_INF("Bluetooth initialized\n");
+
+    // FIXME: Check
+    init_button();
+    err = my_lbs_init(&app_callbacks);
+    if (err) {
+        printk("Failed to init LBS (err:%d)\n", err);
+        return -1;
+    }
 
     // Start advertising
     err = bt_le_adv_start(adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));

@@ -9,4 +9,6 @@ target_sources(app PRIVATE
     src/main.c
     src/schedules.c
     src/bluetooth.c
+    src/my_lbs.c
+    src/cts_service.c
 )
